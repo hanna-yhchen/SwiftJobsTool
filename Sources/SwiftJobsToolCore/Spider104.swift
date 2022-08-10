@@ -9,53 +9,86 @@ import Foundation
 
 typealias RawResponse = [String: Any]
 
-public final class Spider104: JSONSpider {
+public final class Spider104 {
+    private let baseComponents: URLComponents
+    private let baseRequest: URLRequest
     private let pages: Int
 
     public init(
-        baseURL: String,
         queries: [String: String],
-        headers: [String: String],
+        headers: [String: String]? = nil,
         pages: Int
     ) throws {
-        self.pages = pages
+        guard var urlComponents = URLComponents(string: "https://www.104.com.tw/") else {
+            throw SpiderError.invalidURL
+        }
+        urlComponents.queryItems = queries.map { URLQueryItem(name: $0, value: $1) }
+        self.baseComponents = urlComponents
 
-        try super.init(baseURL: baseURL, queries: queries, headers: headers)
+        guard let url = urlComponents.url else { throw SpiderError.invalidURL }
+        var request = URLRequest(url: url)
+        request.setValue(K.agent, forHTTPHeaderField: "User-Agent")
+        if let headers = headers {
+            for (field, value) in headers {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+        }
+        self.baseRequest = request
+
+        self.pages = pages
     }
 
     public func start() async {
         print("Start searching on 104人力銀行...")
-        do {
-            var jobList: [RawResponse] = []
-            for i in 1...pages {
-                let list = try await fetchJobList(page: i)
-                jobList.append(contentsOf: list)
-            }
 
-            print(jobList.count, "jobs found.")
-            jobList.forEach { job in
-                guard
-                    let name = job["jobName"] as? String,
-                    let linkDict = job["link"] as? [String: String],
-                    let urlString = linkDict["job"],
-                    let url = URL(string: "https:" + urlString)
-                else { return }
-                print(name, url.absoluteString)
-            }
-            // TODO: fetch job detail
+        do {
+            let ids = try await fetchIDs(upTo: pages)
+            print("\(ids.count) results received.")
+            // TODO: fetch detail by id
             // TODO: write into csv file
         } catch {
             print(error)
         }
     }
+}
 
-    private func fetchJobList(page: Int) async throws -> [RawResponse] {
-        urlComponents.queryItems?.append(URLQueryItem(name: "page", value: "\(page)"))
-        guard let url = urlComponents.url else {
-            throw SpiderError.invalidURL
+// MARK: - Networking
+
+extension Spider104 {
+    private func fetchIDs(upTo pages: Int) async throws -> [String] {
+        try await withThrowingTaskGroup(
+            of: (page: Int, list: [RawResponse]).self,
+            returning: [String].self
+        ) { group in
+            for page in 1...pages {
+                group.addTask {[self] in
+                    let list = try await fetchJobList(with: request(forPage: page))
+                    return (page, list)
+                }
+            }
+
+            var lists: [Int: [RawResponse]] = [:]
+            for try await result in group {
+                lists[result.page] = result.list
+            }
+
+            var ids: [String] = []
+            for page in 1...pages {
+                guard let list = lists[page] else { continue }
+                for job in list {
+                    guard
+                        let linkDict = job["link"] as? RawResponse,
+                        let linkString = linkDict["job"] as? String,
+                        let id = extractID(from: linkString)
+                    else { continue }
+                    ids.append(id)
+                }
+            }
+            return ids
         }
-        request.url = url
+    }
 
+    private func fetchJobList(with request: URLRequest) async throws -> [RawResponse] {
         let (data, _) = try await URLSession.shared.data(for: request)
         guard
             let jsonEnvelope = try JSONSerialization.jsonObject(with: data) as? RawResponse,
@@ -66,5 +99,42 @@ public final class Spider104: JSONSpider {
         }
 
         return list
+    }
+}
+
+// MARK: - Helpers
+
+extension Spider104 {
+    private func extractID(from link: String) -> String? {
+        guard
+            let start = link.range(of: "job/")?.upperBound,
+            let end = link.firstIndex(of: "?")
+        else {
+            return nil
+        }
+        return String(link[start..<end])
+    }
+
+    private func request(forPage page: Int) throws -> URLRequest {
+        var (urlComponents, request) = (baseComponents, baseRequest)
+        urlComponents.path = "/jobs/search/list"
+        urlComponents.queryItems?.append(URLQueryItem(name: "page", value: String(page)))
+        guard let url = urlComponents.url else { throw SpiderError.invalidURL }
+
+        request.url = url
+        request.setValue("https://www.104.com.tw/jobs/search/", forHTTPHeaderField: "Referer")
+
+        return request
+    }
+
+    private func request(forID id: String) throws -> URLRequest {
+        var (urlComponents, request) = (baseComponents, baseRequest)
+        urlComponents.path = "/job/ajax/content/" + id
+        guard let url = urlComponents.url else { throw SpiderError.invalidURL }
+
+        request.url = url
+        request.setValue("https://www.104.com.tw/job/" + id, forHTTPHeaderField: "Referer")
+
+        return request
     }
 }

@@ -19,7 +19,6 @@ enum SwiftJobsTool {
         let pages = 5
 
         let spider104 = try Spider104(
-            baseURL: "https://www.104.com.tw/jobs/search/list",
             queries: [
                 "ro": "1",
                 "isnew": "30",
@@ -32,9 +31,6 @@ enum SwiftJobsTool {
                 "excludeJobKeyword": excludedKeyword,
                 "hotjob": "0",
                 "recommendJob": "0",
-            ],
-            headers: [
-                "Referer": "https://www.104.com.tw/jobs/search/",
             ],
             pages: pages
         )
