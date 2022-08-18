@@ -10,4 +10,5 @@ import Foundation
 enum SpiderError: Swift.Error {
     case invalidURL
     case failedParsing
+    case failedEncoding
 }

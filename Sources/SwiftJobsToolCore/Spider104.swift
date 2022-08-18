@@ -52,10 +52,10 @@ public final class Spider104 {
                 create: false
             )
 
-            let fileURL = path.appendingPathComponent("104jobs.csv")
+            let fileURL = path.appendingPathComponent("104_jobs.csv")
 
             try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
-            print("Write to file \"104jobs.csv\" in the desktop directory.")
+            print("Write to file \"104_jobs.csv\" in the desktop directory.")
         } catch {
             print(error)
         }

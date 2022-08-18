@@ -34,6 +34,19 @@ enum SwiftJobsTool {
             ],
             pages: pages
         )
-        await spider104.start()
+
+        let CRSpider = try CakeResumeSpider(
+            filters: [
+                "profession:it_ios-developer",
+                "job_type:full_time",
+                "seniority_level:entry_level",
+            ],
+            pages: pages
+        )
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await spider104.start() }
+            group.addTask { await CRSpider.start() }
+        }
     }
 }
