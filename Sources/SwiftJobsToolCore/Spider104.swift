@@ -42,10 +42,20 @@ public final class Spider104 {
         print("Start searching on 104人力銀行...")
 
         do {
-            let ids = try await fetchIDs(upTo: pages)
-            print("\(ids.count) results received.")
-            // TODO: fetch detail by id
-            // TODO: write into csv file
+            // let ids = try await fetchIDs(upTo: pages)
+            var csvString = "Job Name, Company, Date, Link\n"
+            try await fetchJobs(pages: pages, writeTo: &csvString)
+            let path = try FileManager.default.url(
+                for: .desktopDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: false
+            )
+
+            let fileURL = path.appendingPathComponent("104jobs.csv")
+
+            try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
+            print("Write to file \"104jobs.csv\" in the desktop directory.")
         } catch {
             print(error)
         }
@@ -55,11 +65,41 @@ public final class Spider104 {
 // MARK: - Networking
 
 extension Spider104 {
-    private func fetchIDs(upTo pages: Int) async throws -> [String] {
-        try await withThrowingTaskGroup(
-            of: (page: Int, list: [RawResponse]).self,
-            returning: [String].self
-        ) { group in
+//    private func fetchIDs(upTo pages: Int) async throws -> [String] {
+//        try await withThrowingTaskGroup(
+//            of: (page: Int, list: [RawResponse]).self,
+//            returning: [String].self
+//        ) { group in
+//            for page in 1...pages {
+//                group.addTask {[self] in
+//                    let list = try await fetchJobList(with: request(forPage: page))
+//                    return (page, list)
+//                }
+//            }
+//
+//            var lists: [Int: [RawResponse]] = [:]
+//            for try await result in group {
+//                lists[result.page] = result.list
+//            }
+//
+//            var ids: [String] = []
+//            for page in 1...pages {
+//                guard let list = lists[page] else { continue }
+//                for job in list {
+//                    guard
+//                        let linkDict = job["link"] as? RawResponse,
+//                        let linkString = linkDict["job"] as? String,
+//                        let id = extractID(from: linkString)
+//                    else { continue }
+//                    ids.append(id)
+//                }
+//            }
+//            return ids
+//        }
+//    }
+
+    private func fetchJobs(pages: Int, writeTo csvString: inout String) async throws {
+        try await withThrowingTaskGroup(of: (page: Int, list: [RawResponse]).self) { group in
             for page in 1...pages {
                 group.addTask {[self] in
                     let list = try await fetchJobList(with: request(forPage: page))
@@ -72,19 +112,28 @@ extension Spider104 {
                 lists[result.page] = result.list
             }
 
-            var ids: [String] = []
             for page in 1...pages {
                 guard let list = lists[page] else { continue }
                 for job in list {
                     guard
+                        var name = job["jobName"] as? String,
+                        var company = job["custName"] as? String,
+                        let date = job["appearDateDesc"] as? String,
                         let linkDict = job["link"] as? RawResponse,
-                        let linkString = linkDict["job"] as? String,
-                        let id = extractID(from: linkString)
+                        var link = linkDict["job"] as? String
                     else { continue }
-                    ids.append(id)
+
+                    name.removeAll { $0 == "," }
+                    company.removeAll { $0 == "," }
+                    link.insert(contentsOf: "https:", at: link.startIndex)
+                    if let startIndexOfQuery = link.firstIndex(of: "?") {
+                        link.removeSubrange(startIndexOfQuery...)
+                    }
+
+                    let row = "\(name), \(company), \(date), \(link)\n"
+                    csvString += row
                 }
             }
-            return ids
         }
     }
 
